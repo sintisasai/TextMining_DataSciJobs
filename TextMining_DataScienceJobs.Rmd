@@ -1,0 +1,566 @@
+---
+title: "Text Mining - DataScience Jobs"
+author: "SINTI SASAI"
+header-includes:
+  \usepackage{fvextra}
+  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+In this project we say that one is looking for a data science job on glassdoor using this link https://www.glassdoor.com/Job/data-science-jobs-SRCH_KO0,12.htm?jobType=fulltime&fromAge=30. I selected three companies that I would like to try. The goal of this project is to:
+
+1. Analyze the job descriptions for each company using text mining skills.
+
+2. Analyze the company reviews - if the reviews are too many for any one company I used the first 20 for each company.
+
+3. Pick up the most suitable company as a potential data science job based on the analysis.
+
+```{r}
+### Import required packages 
+pacman::p_load("tidyverse", "readxl", "wordcloud", "worldcloud2", "gridExtra",                  "janitor", "quanteda", "topicmodels", "stopwords", "tidytext", 
+               "caTools", "ROCR", "rpart", "rpart.plot", "car", "Hmisc",
+               "quanteda.textplots", "quanteda.textstats", "quanteda.textmodels")
+```
+The first role I identified as a role I would consider applying for is the "Data Scientist" job at IBM. We do an analysis of the job description.
+```{r}
+### Import dataset
+jobs_tbl = read_xlsx(file.choose(),sheet = 1)
+
+vtext = jobs_tbl %>% 
+  select(position, description)
+
+### Tokenize by words
+### unnest_tokens --- Split a column into tokens 
+### using the tokenizers package, splitting the 
+### table into one-token-per-row. 
+#vtext %>% 
+  #unnest_tokens(output = word,
+                #input = description,
+                #token = "words")
+
+job_words = vtext %>% 
+  unnest_tokens(output = word,
+                input = description,
+                token = "words")
+
+
+
+### Clean dataset by removing some stop words 
+outlist = c('and','in','the','of','to','a','on','are','our','will','with',
+            'or','for','as','we','it','have','by','at','this','an','is',
+            'you','us','their','data','be','that','end')
+job_words <- job_words[ ! job_words$word %in% outlist, ]
+
+detach(package:Hmisc)
+### Count word frequencies
+job_cnts = job_words %>% 
+  group_by(word) %>% 
+  summarize(cnt = n())
+
+### IBM's Data Scientist top 10 words
+#job_cnts %>%
+  #arrange(desc(cnt))
+
+p1 = job_cnts %>%
+  arrange(desc(cnt)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = reorder(word, cnt), y = cnt, fill = word)) +
+  geom_bar(stat = "identity", color = "white") + 
+  guides(fill = FALSE)+ 
+  scale_y_discrete(limits = seq(0, 150, 25))+
+  geom_text(aes(label  = cnt), 
+            vjust  = 0.5, 
+            hjust  = 1,
+            colour = "black", 
+            size   = 5)+
+  labs(title    = "Data Scientist - IBM",
+       x        = "Words",
+       y        = "Count")+
+  theme(axis.text.x   = element_text(size = 12),
+        axis.text.y   = element_text(size = 12),
+        axis.title.x  = element_text(size = 15),
+        axis.title.y  = element_text(size = 15),
+        plot.title    = element_text(hjust = 0, size = 10),
+        plot.subtitle = element_text(hjust = 0, size = 12),
+        plot.caption  = element_text(hjust = 1, size = 12))+
+  coord_flip()
+p1
+```
+Analyzing first the role "Data Scientist" role at IBM, we see from the graph above the top 10 words for the role with words such as "experience", "machine learning" appearing more frequently. 
+
+Making a word cloud do describe the role at IBM: 
+```{r}
+### Cleaning the text version (Variable--word) of the Dataset
+### Create a corpus
+IBM_words = corpus(job_words$word)
+#summary(IBM_words)
+
+#tokens(IBM_words, what = "word")
+
+### Construct a sparse document-feature matrix(DFM), 
+### from the just created corpus (IBM_words)
+### while convert all features to lowercase, steming, 
+### removing stop-words, in English and other
+### common unaided characters 
+ibm_words = dfm(IBM_words, 
+                   tolower     = T,
+                   stem        = T, 
+                   remove_punc = T, 
+                   remove      = c(stopwords("english"), " ", ".", ","))
+#summary(ibm_words)
+
+#topfeatures(ibm_words)
+
+### lemmatization
+lis1 = c("experi")
+lis2 = c("cognit")
+lis3 = c("manag")
+lis4 = c("servic")
+lis5 = c("machin")
+lis6 = c("learn")
+lis7 = c("devops")
+lemma1 = rep("experience", length(lis1))
+lemma2 = rep("cognitive", length(lis2))
+lemma3 = rep("management", length(lis3))
+lemma4 = rep("service", length(lis4))
+lemma5 = rep("machine", length(lis5))
+lemma6 = rep("learning", length(lis6))
+lemma7 = rep("develops", length(lis7))
+
+ibm_words = dfm_replace(ibm_words, pattern = lis1, replacement = lemma1)
+ibm_words = dfm_replace(ibm_words, pattern = lis2, replacement = lemma2)
+ibm_words = dfm_replace(ibm_words, pattern = lis3, replacement = lemma3)
+ibm_words = dfm_replace(ibm_words, pattern = lis4, replacement = lemma4)
+ibm_words = dfm_replace(ibm_words, pattern = lis5, replacement = lemma5)
+ibm_words = dfm_replace(ibm_words, pattern = lis6, replacement = lemma6)
+ibm_words = dfm_replace(ibm_words, pattern = lis7, replacement = lemma7)
+#topfeatures(ibm_words)
+
+### Provide the word cloud after pre-processing
+
+pal = brewer.pal(8, "Dark2")
+
+WordCloud4words = textplot_wordcloud(ibm_words, 
+                                        min_size      = 0.5, 
+                                        max_size      = 4, 
+                                        min_count     = 2,
+                                        max_words     = 100, 
+                                        color         = pal,
+                                        rotation      = 0.1, 
+                                        random_order  = FALSE, 
+                                        random_color  = FALSE,
+                                        ordered_color = FALSE, 
+                                        labelcolor    = "gold", 
+                                        labelsize     = 1.5,
+                                        labeloffset   = 0, 
+                                        fixed_aspect  = TRUE, 
+                                        comparison    = FALSE)
+
+```
+The second role identified is the "Statistical Analyst" job at Ledcor. Again, doing a similar analysis as above: 
+```{r}
+### Import dataset
+ledcor_tbl = read_xlsx(file.choose(),sheet = 2)
+
+vtextl = ledcor_tbl %>% 
+  select(position, description)
+
+### Tokenize by words
+### unnest_tokens --- Split a column into tokens 
+### using the tokenizers package, splitting the 
+### table into one-token-per-row. 
+#vtext %>% 
+  #unnest_tokens(output = word,
+                #input = description,
+                #token = "words")
+
+ledcor_words = vtextl %>% 
+  unnest_tokens(output = word,
+                input = description,
+                token = "words")
+
+
+
+### Clean dataset by removing some stop words 
+outlist = c('and','in','the','of','to','a','on','are','our','will','with',
+            'or','for','as','we','it','have','by','at','this','an','is',
+            'you','us','their','data','be','that','end')
+ledcor_words <- ledcor_words[ ! ledcor_words$word %in% outlist, ]
+
+### Count word frequencies
+ledcor_cnts = ledcor_words %>% 
+  group_by(word) %>% 
+  summarize(cntl = n())
+
+
+
+### Ledcor's Data Scientist top 10 words
+#ledcor_cnts %>%
+  #arrange(desc(cntl))
+
+p2 = ledcor_cnts %>%
+  arrange(desc(cntl)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = reorder(word, cntl), y = cntl, fill = word)) +
+  geom_bar(stat = "identity", color = "white") + 
+  guides(fill = FALSE)+ 
+  scale_y_discrete(limits = seq(0, 150, 25))+
+  geom_text(aes(label  = cntl), 
+            vjust  = 0.5, 
+            hjust  = 1,
+            colour = "black", 
+            size   = 5)+
+  labs(title    = "Statistical Analyst - Ledcor",
+       x        = "Words",
+       y        = "Count")+
+  theme(axis.text.x   = element_text(size = 12),
+        axis.text.y   = element_text(size = 12),
+        axis.title.x  = element_text(size = 15),
+        axis.title.y  = element_text(size = 15),
+        plot.title    = element_text(hjust = 0, size = 10),
+        plot.subtitle = element_text(hjust = 0, size = 12),
+        plot.caption  = element_text(hjust = 1, size = 12))+
+  coord_flip()
+p2
+```
+Analyzing the role "Statistical Analyst" role at Ledcor, we see from the graph above the top 10 words for the role with words such as "business", "modeling","operations" among others appearing more frequently. 
+
+Making a word cloud do describe the role at Ledcor: 
+```{r}
+### Cleaning the text version (Variable--word) of the Dataset
+### Create a corpus
+Ledcor_words = corpus(ledcor_words$word)
+#summary(Ledcor_words)
+
+#tokens(Ledcor_words, what = "word")
+
+### Construct a sparse document-feature matrix(DFM), 
+### from the just created corpus (IBM_words)
+### while convert all features to lowercase, steming, 
+### removing stop-words, in English and other
+### common unaided characters 
+led_words = dfm(Ledcor_words, 
+                   tolower     = T,
+                   stem        = T, 
+                   remove_punc = T, 
+                   remove      = c(stopwords("english"), " ", ".", ","))
+#summary(led_words)
+
+#topfeatures(led_words)
+
+### lemmatization
+lis1 = c("busi")
+lis2 = c("statist")
+lis3 = c("oper")
+lis4 = c("provid")
+lis5 = c("full")
+lis6 = c("time")
+lis7 = c("temporari")
+lis8 = c("analyt")
+lis9 = c("techniqu")
+
+lemma1 = rep("business", length(lis1))
+lemma2 = rep("statistics", length(lis2))
+lemma3 = rep("operations", length(lis3))
+lemma4 = rep("provide", length(lis4))
+lemma5 = rep("full-time", length(lis5))
+lemma6 = rep("full-time", length(lis6))
+lemma7 = rep("temporarily", length(lis7))
+lemma8 = rep("analyst", length(lis8))
+lemma9 = rep("technique", length(lis9))
+
+
+led_words = dfm_replace(led_words, pattern = lis1, replacement = lemma1)
+led_words = dfm_replace(led_words, pattern = lis2, replacement = lemma2)
+led_words = dfm_replace(led_words, pattern = lis3, replacement = lemma3)
+led_words = dfm_replace(led_words, pattern = lis4, replacement = lemma4)
+led_words = dfm_replace(led_words, pattern = lis5, replacement = lemma5)
+led_words = dfm_replace(led_words, pattern = lis6, replacement = lemma6)
+led_words = dfm_replace(led_words, pattern = lis7, replacement = lemma7)
+led_words = dfm_replace(led_words, pattern = lis8, replacement = lemma8)
+led_words = dfm_replace(led_words, pattern = lis9, replacement = lemma9)
+
+#topfeatures(led_words)
+
+### Provide the word cloud after pre-processing
+
+pal = brewer.pal(8, "Dark2")
+
+WordCloudLedWords = textplot_wordcloud(led_words, 
+                                        min_size      = 0.5, 
+                                        max_size      = 4, 
+                                        min_count     = 2,
+                                        max_words     = 100, 
+                                        color         = pal,
+                                        rotation      = 0.1, 
+                                        random_order  = FALSE, 
+                                        random_color  = FALSE,
+                                        ordered_color = FALSE, 
+                                        labelcolor    = "gold", 
+                                        labelsize     = 1.5,
+                                        labeloffset   = 0, 
+                                        fixed_aspect  = TRUE, 
+                                        comparison    = FALSE)
+```
+
+From the word-cloud we see the most common words for the job-description for the statistical analyst role at Ledcor includes 'full-time','business', 'statistics', 'leadership', 'model', 'support' among others.
+
+The third role considered is "NLP Data Scientist" job at Amazon. Doing similar analysis as above: 
+```{r}
+amazon_tbl = read_xlsx(file.choose(),sheet = 3)
+
+vtexta = amazon_tbl %>% 
+  select(position, description)
+
+### Tokenize by words
+### unnest_tokens --- Split a column into tokens 
+### using the tokenizers package, splitting the 
+### table into one-token-per-row. 
+#vtexta %>% 
+  #unnest_tokens(output = word,
+                #input = description,
+                #token = "words")
+
+amazon_words = vtexta %>% 
+  unnest_tokens(output = word,
+                input = description,
+                token = "words")
+
+
+
+### Clean dataset by removing some stop words 
+outlist = c('and','in','the','of','to','a','on','are','our','will','with',
+            'or','for','as','we','it','have','by','at','this','an','is',
+            'you','us','their','data','be','that','end')
+amazon_words <- amazon_words[ ! amazon_words$word %in% outlist, ]
+
+### Count word frequencies
+amazon_cnts = amazon_words %>% 
+  group_by(word) %>% 
+  summarize(cnta = n())
+
+
+
+### Amazon's Data Scientist top 10 words
+#amazon_cnts %>%
+  #arrange(desc(cntl))
+
+p3 = amazon_cnts %>%
+  arrange(desc(cnta)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = reorder(word, cnta), y = cnta, fill = word)) +
+  geom_bar(stat = "identity", color = "white") + 
+  guides(fill = FALSE)+ 
+  scale_y_discrete(limits = seq(0, 150, 25))+
+  geom_text(aes(label  = cnta), 
+            vjust  = 0.5, 
+            hjust  = 1,
+            colour = "black", 
+            size   = 5)+
+  labs(title    = "NLP Data Scientist- Amazon",
+       x        = "Words",
+       y        = "Count")+
+  theme(axis.text.x   = element_text(size = 12),
+        axis.text.y   = element_text(size = 12),
+        axis.title.x  = element_text(size = 15),
+        axis.title.y  = element_text(size = 15),
+        plot.title    = element_text(hjust = 0, size = 10),
+        plot.subtitle = element_text(hjust = 0, size = 12),
+        plot.caption  = element_text(hjust = 1, size = 12))+
+  coord_flip()
+p3
+```
+
+Analyzing the role "NLP Data Scientist" role at Amazon, we see from the graph above the top 10 words for the role with words such as "language", "experience","research", "phd" among others appearing more frequently. 
+
+Similarly, making a word cloud do describe the role at Amazon:
+
+```{r}
+### Cleaning the text version (Variable--word) of the Dataset
+### Create a corpus
+Amazon_words = corpus(amazon_words$word)
+#summary(Amazon_words)
+
+#tokens(Amazon_words, what = "word")
+
+### Construct a sparse document-feature matrix(DFM), 
+### from the just created corpus (IBM_words)
+### while convert all features to lowercase, steming, 
+### removing stop-words, in English and other
+### common unaided characters 
+amaz_words = dfm(Amazon_words, 
+                   tolower     = T,
+                   stem        = T, 
+                   remove_punc = T, 
+                   remove      = c(stopwords("english"), " ", ".", ","))
+#summary(amaz_words)
+
+#topfeatures(amaz_words)
+
+### lemmatization
+lis1 = c("languag")
+lis2 = c("experi")
+lis3 = c("servic")
+lis4 = c("statist")
+lis5 = c("analysi")
+lis6 = c("achiev")
+lis7 = c("collabor")
+lis8 = c("qualif")
+lis9 = c("machin")
+
+lemma1 = rep("language", length(lis1))
+lemma2 = rep("experience", length(lis2))
+lemma3 = rep("service", length(lis3))
+lemma4 = rep("statistics", length(lis4))
+lemma5 = rep("analysis", length(lis5))
+lemma6 = rep("achieve", length(lis6))
+lemma7 = rep("collaborate", length(lis7))
+lemma8 = rep("qualified", length(lis8))
+lemma9 = rep("machine", length(lis9))
+
+
+amaz_words = dfm_replace(amaz_words, pattern = lis1, replacement = lemma1)
+amaz_words = dfm_replace(amaz_words, pattern = lis2, replacement = lemma2)
+amaz_words = dfm_replace(amaz_words, pattern = lis3, replacement = lemma3)
+amaz_words = dfm_replace(amaz_words, pattern = lis4, replacement = lemma4)
+amaz_words = dfm_replace(amaz_words, pattern = lis5, replacement = lemma5)
+amaz_words = dfm_replace(amaz_words, pattern = lis6, replacement = lemma6)
+amaz_words = dfm_replace(amaz_words, pattern = lis7, replacement = lemma7)
+amaz_words = dfm_replace(amaz_words, pattern = lis8, replacement = lemma8)
+amaz_words = dfm_replace(amaz_words, pattern = lis9, replacement = lemma9)
+
+#topfeatures(amaz_words)
+
+### Provide the word cloud after pre-processing
+
+pal = brewer.pal(8, "Dark2")
+
+WordCloudAmazWords = textplot_wordcloud(amaz_words, 
+                                        min_size      = 0.5, 
+                                        max_size      = 4, 
+                                        min_count     = 2,
+                                        max_words     = 100, 
+                                        color         = pal,
+                                        rotation      = 0.1, 
+                                        random_order  = FALSE, 
+                                        random_color  = FALSE,
+                                        ordered_color = FALSE, 
+                                        labelcolor    = "gold", 
+                                        labelsize     = 1.5,
+                                        labeloffset   = 0, 
+                                        fixed_aspect  = TRUE, 
+                                        comparison    = FALSE)
+```
+
+From the word-cloud we see the most common words for the job-description for the NLP data scientist role at Amazon includes 'experience','model', 'phd', 'statistics', 'research', among others.
+
+Comparing top words for the 3 roles:
+
+```{r}
+grid.arrange(p1,p2,p3, ncol = 3)
+```
+The graph above shows top words for the identified roles at the 3 different companies, IBM, Ledcor and Amazon, respectively  
+
+We now do an analysis of the company reviews for the 3: 
+
+Part 2 
+
+```{r}
+ibm = read_xlsx(file.choose())
+ledcor = read_xlsx(file.choose())
+amazon = read_xlsx(file.choose())
+
+
+ibm$name = 'IBM'
+ledcor$name = 'Ledcor'
+amazon$name = 'Amazon'
+
+ibm     = ibm[c(3,9,10)]
+ledcor  = ledcor[c(3,9,10)]
+amazon  = amazon[c(3,9,10)]
+
+
+
+job_reviews <- rbind(amazon,ibm,ledcor)
+
+colnames(job_reviews)[1] ="rating"
+colnames(job_reviews)[2] ="review"
+
+review_words = job_reviews %>%
+  unnest_tokens(output = word, 
+                input  = review, 
+                token  = "words")
+
+outlist = c('and','in','the','of','to','a','on','are','our','will','with',
+            'or','for','as','we','it','have','by','at','this','an','is',
+            'you','us','their','data','be','that','i','too','if','its','but','they',
+            'do','who','me','any','your','there','what','was','like','make','off',
+            'were','then','work')
+review_words <- review_words[ ! review_words$word %in% outlist, ]
+
+### Count word frequencies, grouping by name of company 
+review_cnts = review_words %>%
+  group_by(name, word) %>%
+  summarize(cnt = n())
+
+#review_cnts
+
+### Word Cloud ### 
+pal = brewer.pal(8, "Dark2")
+comp = c('IBM','Ledcor','Amazon')
+
+### Word cloud for reviews for IBM:
+review_cnts %>%
+  filter(name == comp[1]) %>% 
+  with(wordcloud(word, cnt, random.order = FALSE, max.words = 100, colors = pal))
+```
+
+Looking at the word cloud for the most frequent words for the reviews of IBM, we see the frequently occurring words e.g 'great', 'good','people','company'. A possible general sentence that can be formed from this is: "IBM is a great company, with good people and good management". This indicates that a good number of reviews are positive. 
+
+Also, analyzing frequent words for Ledcor reviews:
+```{r}
+### Word cloud for reviews for Ledcor:
+review_cnts %>%
+  filter(name == comp[2]) %>% 
+  with(wordcloud(word, cnt, random.order = FALSE, max.words = 100, colors = pal))
+```
+The most frequent words are for example: 'management', 'not', 'no', 'great', 'company','good','people','safety'. We see that we have possible both positive (given by words such as 'great') and negative reviews(indicated by words such as 'not','no) of the company. 
+
+And finally, looking at the same for Amazon:
+```{r}
+review_cnts %>%
+  filter(name == comp[3]) %>% 
+  with(wordcloud(word, cnt, random.order = FALSE, max.words = 100, colors = pal))
+```
+The most frequent words for amazon, include words such as: 'job', 'pay', 'benefits', 'good', 'not', 'management', 'great', 'no', 'time', 'culture'. A possible sentence could be "A company with great work culture", "Good management", "No time out", "great pay and benefits". There are possible both positive and negative reviews. Though based on my analysis, I would say most of the reviews are positive. 
+
+Now, also doing an analysis of overall reviews for the 3 companies based on the ratings, we get a word cloud for reviews of the 3 that have an overall rating of 5 stars and see the companies that occur in this,
+
+```{r}
+### Count word frequencies based on ratings and the words 
+review_cnts = review_words %>%
+  group_by(rating, word) %>%
+  summarize(cnt = n())
+
+### Get word cloud for overall rating as 5 stars 
+review_cnts %>%
+  filter(rating == '5.0') %>% 
+  with(wordcloud(word, cnt, random.order = FALSE, max.words = 100, colors = pal))
+
+```
+
+From the above word cloud, the word cloud shows reviews for the companies that have a 5 star rating with the frequently occurring words in the reviews. We see that both Amazon and IBM have those positive reviews with a 5 star rating. 
+
+Conclusion:
+Based on the analysis of the job descriptions, I eliminate "NLP-Data Scientist" as a role I would consider as I do not meet the requirement of having a PhD. 
+Now considering the company reviews for the 2 remaining roles at both IBM and Ledcor, based on the company reviews analysis, the company with most 5 star ratings and positive reviews is IBM.
+And thus the role I will consider applying for is the "Data Scientist" role at IBM 
